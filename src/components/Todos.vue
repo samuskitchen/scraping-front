@@ -13,12 +13,22 @@
           autofocus
           autocomplete="off"
           :placeholder="this.inputPlaceholder"
-          v-model="newTodo"
-          @keyup.enter="addTodo"
+          v-model="address"
+          @keyup.enter="filterAddress"
         />
       </header>
 
-      <div v-if="this.viewHistory">
+      <div v-if="this.viewNotAvailable">
+        <section class="todoapp">
+          <div class="container">
+            <div class="row">
+              <h1 class="label-data">{{dataNotAvailable}}</h1>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div v-else-if="this.viewHistory">
         <section class="main" v-cloak>
           <ul class="todo-list">
             <li v-for="items in filteredTodos" class="todo" :key="items.address">
@@ -29,7 +39,8 @@
           </ul>
         </section>
       </div>
-      <div v-else>
+
+      <div v-else-if="this.viewSearch">
         <section class="todoapp">
           <body class="body-dataserver">
             <div class="container">
@@ -103,8 +114,8 @@
                   </div>
                 </div>
 
-                <p/>
-                <p/>
+                <p />
+                <p />
 
                 <button
                   :id="'expanded'"
@@ -112,7 +123,7 @@
                   class="collapsible caret"
                   v-on:click="expanded($event)"
                 >Servers</button>
-                
+
                 <div class="content">
                   <ul>
                     <li v-for="server in filteredServers" class="todo" :key="server.address">
@@ -214,37 +225,31 @@
 </template>
 
 <script>
-// visibility filters
-let filters = {
-  all: function() {
-    this.viewHistory = false;
-  },
-  search: function() {
-    this.viewHistory = false;
-  },
-  history: function() {
-    this.viewHistory = true;
-  }
-};
+import dataServeService from "../service/DataServeService";
 
 // app Vue instance
 const Todos = {
   name: "Todos",
-  props: {
-    activeUser: Object
-  },
 
   // app initial state
   data: function() {
     return {
-      todos: [],
+      dataNotAvailable: "",
+      viewNotAvailable: false,
       viewHistory: false,
+      viewSearch: false,
+      address: "",
+      visibility: "all",
+      loading: true,
+      error: null,
+
       server: {
         address: String,
         ssl_grade: String,
         country: String,
         owner: String
       },
+
       dataServe: {
         servers: [this.server],
         servers_changed: Boolean,
@@ -254,29 +259,31 @@ const Todos = {
         title: String,
         is_down: Boolean
       },
+
       itemServe: {
         address: String
       },
+
       item: {
         items: [this.itemServe]
-      },
-      newTodo: "",
-      editedTodo: null,
-      visibility: "all",
-      loading: true,
-      error: null
+      }
     };
   },
 
   mounted() {
-    // inject some startup data
-    this.todos = [
-      { title: "Drink coffee", completed: false },
-      { title: "Write REST API", completed: false }
-    ];
+    dataServeService
+      .getAll()
+      .then(response => {
+        this.item = response.data;
+      })
+      .catch(error => {
+        this.$log.debug(error);
+        this.error = "Failed to load Data Serve";
+      })
+      .finally(() => (this.loading = false));
 
-    this.itemServe = [{ address: "google.com" }, { address: "trura.com" }];
-    this.item.items = this.itemServe;
+    // this.itemServe = [{ address: "google.com" }, { address: "trura.com" }];
+    // this.item.items = this.itemServe;
 
     this.server = [
       {
@@ -309,33 +316,17 @@ const Todos = {
   },
 
   // computed properties
-  // http://vuejs.org/guide/computed.html
   computed: {
     filteredTodos: function() {
-      //console.log(this.items.items[0].address)
       return this.item.items;
-      //return filters[this.visibility](this.todo)
     },
 
     filteredServers: function() {
-      //console.log(this.dataServe.servers[0])
       return this.dataServe.servers;
-      //return filters[this.visibility](this.todo)
     },
 
     remaining: function() {
       return this.item.items.length;
-    },
-
-    allDone: {
-      get: function() {
-        return this.remaining === 0;
-      },
-      set: function(value) {
-        this.todos.forEach(function(todo) {
-          todo.completed = value;
-        });
-      }
     },
 
     inputPlaceholder: function() {
@@ -349,21 +340,32 @@ const Todos = {
     }
   },
 
-  // methods that implement data logic.
-  // note there's no DOM manipulation here at all.
   methods: {
-    addTodo: function() {
-      var value = this.newTodo && this.newTodo.trim();
+    filterAddress: function() {
+      var value = this.address && this.address.trim();
+
+      dataServeService
+        .getByAddress(value)
+        .then(response => {
+          if (response.status == 206) {
+            this.$log.debug("Entro");
+            this.dataNotAvailable = response.data;
+          } else {
+            this.$log.debug("Data loaded: ", response.data);
+            this.dataServe = response.data;
+          }
+        })
+        .catch(error => {
+          this.$log.debug(error);
+          this.error = "Failed to load Data Serve";
+        })
+        .finally(() => (this.loading = false));
+
       if (!value) {
         return;
       }
 
-      this.todos.push({
-        title: value,
-        completed: false
-      });
-
-      this.newTodo = "";
+      this.address = "";
     },
 
     setVisibility: function(vis) {
@@ -371,10 +373,18 @@ const Todos = {
     },
 
     search: function() {
-      this.viewHistory = false;
+      if (this.dataNotAvailable.length > 0) {
+        this.viewNotAvailable = true;
+        this.viewSearch = false;
+      } else {
+        this.viewNotAvailable = false;
+        this.viewSearch = true;
+        this.viewHistory = false;
+      }
     },
 
     history: function() {
+      this.viewSearch = false;
       this.viewHistory = true;
     },
 
@@ -390,43 +400,7 @@ const Todos = {
       } else {
         content.style.display = "block";
         element.classList.toggle("caret-down");
-        
       }
-    },
-
-    /*completeTodo (todo) {
-      },*/
-
-    removeTodo: function(todo) {
-      // notice NOT using "=>" syntax
-      this.todos.splice(this.todos.indexOf(todo), 1);
-    },
-
-    editTodo: function(todo) {
-      this.beforeEditCache = todo.title;
-      this.editedTodo = todo;
-    },
-
-    doneEdit: function(todo) {
-      if (!this.editedTodo) {
-        return;
-      }
-
-      this.editedTodo = null;
-      todo.title = todo.title.trim();
-
-      if (!todo.title) {
-        this.removeTodo(todo);
-      }
-    },
-
-    cancelEdit: function(todo) {
-      this.editedTodo = null;
-      todo.title = this.beforeEditCache;
-    },
-
-    removeCompleted: function() {
-      this.todos = filters.active(this.todos);
     },
 
     handleErrorClick: function() {
@@ -434,9 +408,6 @@ const Todos = {
     }
   },
 
-  // a custom directive to wait for the DOM to be updated
-  // before focusing on the input field.
-  // http://vuejs.org/guide/custom-directive.html
   directives: {
     "todo-focus": function(el, binding) {
       if (binding.value) {
