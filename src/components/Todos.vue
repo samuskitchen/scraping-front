@@ -1,5 +1,7 @@
 <template>
 <div>
+  <notifications group="foo" position="top center" :max="3" :width="400" style="padding-top: 20px;"/>
+
   <h1 class="title">Scraping</h1>
 
   <section class="todoapp">
@@ -40,7 +42,7 @@
         </section>
       </div>
 
-      <div v-else-if="this.viewSearch">
+      <div v-else-if="this.viewSearch && dataServe !== null ">
         <section class="todoapp">
           <body class="body-dataserver">
             <div class="container">
@@ -201,6 +203,14 @@
           {{ remaining | pluralize }} left
         </span>
         <ul class="filters">
+          
+          <li>
+            <a
+              href="#/clear"
+              @click="clear()"
+              :class="{ selected: visibility == 'search' }"
+            >Clear</a>
+          </li>
           <li>
             <a
               href="#/search"
@@ -271,45 +281,23 @@ const Todos = {
   },
 
   mounted() {
+    this.$loading(true);
     dataServeService
       .getAll()
       .then(response => {
         this.item = response.data;
+        this.$loading(false);
       })
       .catch(error => {
         this.$log.debug(error);
         this.error = "Failed to load Data Serve";
+        this.$loading(false);
       })
-      .finally(() => (this.loading = false));
+      .finally(() => (
+        this.loading = false
+        ));
 
-    // this.itemServe = [{ address: "google.com" }, { address: "trura.com" }];
-    // this.item.items = this.itemServe;
-
-    this.server = [
-      {
-        address: "216.58.195.78",
-        ssl_grade: "A",
-        country: "US",
-        owner: "Google LLC"
-      },
-      {
-        address: "2607:f8b0:4005:807:0:0:0:200e",
-        ssl_grade: "A",
-        country: "US",
-        owner: "Google LLC"
-      }
-    ];
-
-    this.dataServe = {
-      servers: this.server,
-      servers_changed: true,
-      ssl_grade: "A",
-      previous_ssl_grade: "A",
-      logo:
-        "https://www.google.com//images/branding/googleg/1x/googleg_standard_color_128dp.png",
-      title: "Google",
-      is_down: false
-    };
+      this.dataServe = null;
 
     // hide the loading message
     this.loading = false;
@@ -343,21 +331,34 @@ const Todos = {
   methods: {
     filterAddress: function() {
       var value = this.address && this.address.trim();
-
+      
+      this.$loading(true);
       dataServeService
         .getByAddress(value)
         .then(response => {
           if (response.status == 206) {
+            this.$loading(false);
             this.$log.debug("Entro");
-            this.dataNotAvailable = response.data;
+
+            this.$notify({
+              group: 'foo',
+              type: 'warn',
+              text: response.data,
+              duration: 10000,
+              speed: 1000,
+              width: 500,
+            });
+
           } else {
             this.$log.debug("Data loaded: ", response.data);
             this.dataServe = response.data;
+            this.$loading(false);
           }
         })
         .catch(error => {
           this.$log.debug(error);
           this.error = "Failed to load Data Serve";
+          this.$loading(false);
         })
         .finally(() => (this.loading = false));
 
@@ -372,10 +373,19 @@ const Todos = {
       this.visibility = vis;
     },
 
+    clear: function() {
+      //this.item = [this.itemServe];
+      this.dataServe = null;
+      this.viewNotAvailable = false;
+      this.viewSearch = true;
+      this.viewHistory = false;
+    },
+
     search: function() {
-      if (this.dataNotAvailable.length > 0) {
-        this.viewNotAvailable = true;
-        this.viewSearch = false;
+      if(this.dataServe == null){
+        this.viewNotAvailable = false;
+        this.viewSearch = true;
+        this.viewHistory = false;
       } else {
         this.viewNotAvailable = false;
         this.viewSearch = true;
