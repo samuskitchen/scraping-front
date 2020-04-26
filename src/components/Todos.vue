@@ -367,6 +367,7 @@ const Todos = {
       }
 
       this.address = "";
+      this.search();
     },
 
     setVisibility: function(vis) {
